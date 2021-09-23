@@ -433,6 +433,8 @@ ESmartMeter.sendOPC1 = function (ipv6, seoj, deoj, esv, epc, edt)
 
 ## 監視系
 
+![](img/observe.png)
+
 ### EPCの監視開始
 
 まずobservationEPCsに監視対象のEPCを文字列表現の16進数で列挙します．
@@ -583,4 +585,5 @@ x Warranty
 
 ## Log
 
+- 1.0.1 READMEだけ修正
 - 1.0.0 とりあえず開発してpublish
