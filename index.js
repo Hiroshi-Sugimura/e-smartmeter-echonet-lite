@@ -12,6 +12,7 @@ const SerialPort = require('serialport')
 // RL7023Stick-D
 let ESmartMeter = {
   WiSunDongle: 'COM3',  // WiSUNドングルのパス（ユーザ設定）
+  deviceType: 'ROHM',  // WiSUNドングルのデバイスタイプ（TESSERA, ROHM）
   WiID: '',     // スマメのBルート認証ID設定（電力会社に申請，ユーザ設定）
   WiPASS: '',   // スマメのBルート認証パスワード設定（電力会社に申請，ユーザ設定）
   port : null,  // スマートメータと通信するシリアルポートオブジェクト
@@ -41,6 +42,7 @@ ESmartMeter.initialize = function( config, callback ) {
 
 	ESmartMeter.debug = config.debug ? config.debug : false;
 	ESmartMeter.WiSunDongle = config.donglePass;
+	ESmartMeter.deviceType  = config.dongleType ? config.dongleType : 'TESSERA';
 	ESmartMeter.WiID = config.id;
 	ESmartMeter.WiPASS = config.password;
 
@@ -70,6 +72,7 @@ ESmartMeter.initialize = function( config, callback ) {
 	ESmartMeter.port.on('data', function (data) {
 		data = data.slice( 0, -2 ); // 受信データのCrLfを消す
 		let recvData = ESmartMeter.parseReceive(data);
+		// console.dir( recvData );
 
 		switch( ESmartMeter.state ) {
 		  case 'setSFE':   // SFE設定中
@@ -103,7 +106,11 @@ ESmartMeter.initialize = function( config, callback ) {
 				}else{
 					ESmartMeter.state = 'scanning';	// active scan, takes about 10s
 					ESmartMeter.debug ? console.log('-- SM:scanning, active scan'):0;
-					ESmartMeter.write('SKSCAN 2 FFFFFFFF 6');
+					if( ESmartMeter.deviceType == 'ROHM' ) {
+						ESmartMeter.write('SKSCAN 2 FFFFFFFF 4 0'); // ROHMのコマンド
+					}else{
+						ESmartMeter.write('SKSCAN 2 FFFFFFFF 6'); // TESSERAのコマンド
+					}
 				}
 			}else{
 				ESmartMeter.debug ? console.log('-- SM:setID, set id', ESmartMeter.WiID):0;
@@ -111,15 +118,20 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 
 		  case 'scanning':  // スキャン中
-			if( data.toString('UTF-8') != 'OK' ) {  // スキャンのOKは無視
-				ESmartMeter.EPANDESC = ESmartMeter.getEPANDESC( data.toString('UTF-8') );  // スキャン成功
-				if( ESmartMeter.EPANDESC != null ) {
-					ESmartMeter.state = 'setChannel';
-					ESmartMeter.debug ? console.log('-- SM:setChannel, set channel', ESmartMeter.EPANDESC.channel):0;
-					ESmartMeter.write('SKSREG S2 ' + ESmartMeter.EPANDESC.channel ); // channel
+			if( data.toString('UTF-8') == 'OK' ) { break; }  // スキャンのOKは無視
+
+			ESmartMeter.EPANDESC = ESmartMeter.getEPANDESC( data.toString('UTF-8') );  // スキャン成功
+
+			if( ESmartMeter.EPANDESC != null ) {
+				ESmartMeter.state = 'setChannel';
+				ESmartMeter.debug ? console.log('-- SM:setChannel, channel', ESmartMeter.EPANDESC.channel):0;
+				ESmartMeter.write('SKSREG S2 ' + ESmartMeter.EPANDESC.channel ); // channel
+			}else{
+				ESmartMeter.debug ? console.log('-- SM:scanning, active scan'):0;
+				if( ESmartMeter.deviceType == 'ROHM' ) {
+					ESmartMeter.write('SKSCAN 2 FFFFFFFF 6 0'); // ROHMのコマンド
 				}else{
-					ESmartMeter.debug ? console.log('-- SM:scanning, active scan'):0;
-					ESmartMeter.write('SKSCAN 2 FFFFFFFF 6');
+					ESmartMeter.write('SKSCAN 2 FFFFFFFF 6'); // TESSERAのコマンド
 				}
 			}
 			break;
@@ -178,10 +190,7 @@ ESmartMeter.initialize = function( config, callback ) {
 				ESmartMeter.connectedTimeoutID = setTimeout( () => {
 					ESmartMeter.debug ? console.log('-- SM:connected available (timeout)'):0;
 					ESmartMeter.state = 'available';
-					// つながったことにしてプロパティマップを取りに行く
-					// ESmartMeter.sendOPC1(ESmartMeter.IPv6, '05FF01', '028801', '62', '9F', '00');
-					// ESmartMeter.getD5();
-					ESmartMeter.returner( { state:'available', data:{count:0,msgs:[]}}, ESmartMeter.userfunc );
+					ESmartMeter.returner( { state:'available', data:{count:0,msgs:[]}, raw:data}, ESmartMeter.userfunc );
 				}, 30000, null);
 			}
 
@@ -213,7 +222,10 @@ ESmartMeter.initialize = function( config, callback ) {
 			break;
 
 		  case 'available':  // 手続き終了，利用可能
-			ESmartMeter.returner( { state:'available', data:recvData }, ESmartMeter.userfunc );
+			if( recvData.count == 0 ) { break; } // 受信データなしの時は無視
+			if( recvData.count == 1 && recvData.msgs[0][0] == 'OK' ) { break; } // OKのみの時は無視
+
+			ESmartMeter.returner( { state:'available', data:recvData, raw:data }, ESmartMeter.userfunc );
 			break;
 
 		  default:
@@ -234,7 +246,6 @@ ESmartMeter.release = function() {
 	}
 	ESmartMeter.stopObservation();
 };
-
 
 
 // スマートメータのチャンネルスキャンの情報を解析する
@@ -307,6 +318,7 @@ ESmartMeter.parseReceive = function(streamData) {
 		  case 'OK':
 		  case 'EVENT':
 		  case 'ERXUDP':
+		  case 'EEDSCAN':
 			if( msgIdx != 0 ) { // msgがあれば登録 sliceに引数なしでdeep copy
 				ret.msgs.push( msg.slice() );
 				msgIdx = 0;
@@ -554,37 +566,60 @@ ESmartMeter.parseMapForm2 = function (bitstr) {
 ]
 */
 ESmartMeter.returner = function(sm, callback) {
-	// console.log('-- SM:returner');
+	// ESmartMeter.debug ? console.log('-- SM:returner()') : 0;
+	// ESmartMeter.debug ? console.log( JSON.stringify(sm) ) : 0;
+
 	if( sm.data.count == 0 ) {
 		// console.log( 'sm.data.count is 0, ignore.' );
 		return;
 	}
 
-	// console.log( '-- SM:returner()' );
-	// console.dir( sm );
-
 	try {
 		sm.data.msgs.forEach( (msg) => {
-			// console.dir( msg );
 			let els = {};
 			let rinfo = {};
 
-			if( msg.length != 9 || msg[0] != 'ERXUDP' ) {
-				// console.log( 'not echonet-lite serial data, ignore.' );
-				return;
-			}
-			rinfo.address = msg[1];
-			rinfo.port    = msg[3];
+			if( ESmartMeter.deviceType == 'ROHM' ) {
+				if( msg.length != 10 || msg[0] != 'ERXUDP' ) {
+					// console.log( 'not echonet-lite serial data, ignore.' );
+					return;
+				}
+				rinfo.address = msg[1];
+				rinfo.port    = msg[3];
 
-			els = ESmartMeter.parseString( msg[8] );
-			if( !els ) {
-				// console.log( 'not echonet-lite, ignore.', msg );
-				return;
-			}
+				els = ESmartMeter.parseBytes( sm.raw.slice(123) );  // 123Byte目からECHONET Lite frame
+				if( !els ) {
+					// console.log( '-- SM.returner() not echonet-lite:', sm.raw.slice(123) );
+					return;
+				}
 
-			// 受信状態から機器情報修正, GETとINFREQ，SET_RESは除く
-			if (els.ESV != "62" && els.ESV != "63" && els.ESV != '71') {
-				ESmartMeter.renewFacilities(rinfo.address, els);
+				// 受信状態から機器情報修正, GETとINFREQ，SET_RESは除く
+				if (els.ESV != "62" && els.ESV != "63" && els.ESV != '71') {
+					ESmartMeter.renewFacilities(rinfo.address, els);
+				}
+
+			}else{  // TESSERA
+				if( msg.length != 9 || msg[0] != 'ERXUDP' ) {
+					// console.log( 'not echonet-lite serial data, ignore.' );
+					return;
+				}
+				rinfo.address = msg[1];
+				rinfo.port    = msg[3];
+
+				if( ESmartMeter.deviceType == 'ROHM') {
+					console.dir( msg[8] );
+				}
+
+				els = ESmartMeter.parseString( msg[8] );
+				if( !els ) {
+					// console.log( 'not echonet-lite, ignore.', msg );
+					return;
+				}
+
+				// 受信状態から機器情報修正, GETとINFREQ，SET_RESは除く
+				if (els.ESV != "62" && els.ESV != "63" && els.ESV != '71') {
+					ESmartMeter.renewFacilities(rinfo.address, els);
+				}
 			}
 
 			callback( sm, rinfo, els, null );
@@ -622,9 +657,30 @@ ESmartMeter.write = function ( str ) {
 };
 
 
-// EL送信のベース
-// 本当はキューにしておきたい
-ESmartMeter.sendBase = function (ip, buffer) {
+// EL送信のベース(ROHM)、本当はキューにしておきたい
+ESmartMeter.sendBaseR = function (ip, buffer) {
+	// console.log( '-- SM:sendBase' );
+	let tid = [ buffer[2], buffer[3] ];
+	let len = ('00' + ESmartMeter.toHexString(buffer.length)).slice(-4).toUpperCase();
+
+	let d = new Buffer("SKSENDTO 1 " + ip + " 0E1A 1 0 " + len + " ");
+	d = Buffer.concat([d, buffer, new Buffer([13, 10]) ]);  // CrLfを付与
+	// console.dir( d );
+
+	ESmartMeter.port.write( d, function(err) {
+		if (err) {
+			console.error('-- SM(E):ESmartMeter.sendBase()', err.message);
+			return err;
+		}else{
+			// console.log('-- SM:sendBase, ok');
+		}
+	});
+
+	return tid;
+};
+
+// EL送信のベース(TESSERA)、本当はキューにしておきたい
+ESmartMeter.sendBaseT = function (ip, buffer) {
 	// console.log( '-- SM:sendBase' );
 	let tid = [ buffer[2], buffer[3] ];
 	let len = ('00' + ESmartMeter.toHexString(buffer.length)).slice(-4).toUpperCase();
@@ -635,7 +691,7 @@ ESmartMeter.sendBase = function (ip, buffer) {
 
 	ESmartMeter.port.write( d, function(err) {
 		if (err) {
-			console.error('-- SM(E):ESmartMeter.sendBase() ', err.message);
+			console.error('-- SM(E):ESmartMeter.sendBase()', err.message);
 			return err;
 		}else{
 			// console.log('-- SM:sendBase, ok');
@@ -648,7 +704,7 @@ ESmartMeter.sendBase = function (ip, buffer) {
 
 // EL送信の基本的なAPI，大体これを使ったらよい
 ESmartMeter.sendOPC1 = function (ipv6, seoj, deoj, esv, epc, edt) {
-	ESmartMeter.debug ? console.log( '-- SM:sendOPC1:', seoj, deoj, esv, epc, edt) : 0;
+	ESmartMeter.debug ? console.log( '-- SM:sendOPC1()', seoj, deoj, esv, epc, edt) : 0;
 
 	// TIDの調整
 	let carry = 0; // 繰り上がり
@@ -714,7 +770,11 @@ ESmartMeter.sendOPC1 = function (ipv6, seoj, deoj, esv, epc, edt) {
 
 	// データができたので送信する
 	// console.dir( buffer );
-	return ESmartMeter.sendBase(ipv6, buffer);
+	if( ESmartMeter.deviceType == 'ROHM' ) {
+		return ESmartMeter.sendBaseR(ipv6, buffer);
+	}else{
+		return ESmartMeter.sendBaseT(ipv6, buffer);
+	}
 };
 
 ESmartMeter.getE7 = function() {
@@ -805,12 +865,6 @@ ESmartMeter.renewFacilities = function (ip, els) {
 		// 新規obj
 		if (ESmartMeter.facilities[ip][els.SEOJ] == null) {
 			ESmartMeter.facilities[ip][els.SEOJ] = {};
-			// 新規オブジェクトのとき，プロパティリストもらおう
-			// console.log('new facilities');
-			// 自動取得フラグがfalseならやらない
-			if( ESmartMeter.autoGetProperties ) {
-				ESmartMeter.getPropertyMaps(ip, ESmartMeter.toHexArray(els.SEOJ));
-			}
 		}
 
 		for (let epc in epcList) {

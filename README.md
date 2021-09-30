@@ -7,17 +7,24 @@ This document is Japanese and English written together.
 
 このモジュールは**日本向け電力スマートメーターとのECHONET Liteプロトコル通信**をサポートします．
 ECHONET Liteプロトコルはスマートハウス機器の通信プロトコルで，正確には低圧スマート電力量メーターをサポートします．
-通信モジュールとしてWi-SUNモジュールである（TESSERA RL7023）が必須です．
+通信モジュールとしてWi-SUNモジュール（TESSERA RL7023またはROHM BP35C2）が必須です．
 
 - TESSERA RL7023
 (https://www.tessera.co.jp/rl7023stick-d_ips.html)
+
+- ROHM BP35C2
+(https://www.rohm.co.jp/products/wireless-communication/specified-low-power-radio-modules/bp35c2-product#productDetail)
 
 This module provides **ECHONET Lite protocol for Low-voltage smart electric energy meter in Japan**.
 The ECHONET Lite protocol is a communication protocol for smart home devices.
-This module requires USB Wi-SUN module (TESSERA RL7023, above) for communication.
+This module requires USB Wi-SUN module (TESSERA RL7023 or ROHM BP35C2) for communication.
 
 - TESSERA RL7023
 (https://www.tessera.co.jp/rl7023stick-d_ips.html)
+
+- ROHM BP35C2
+(https://www.rohm.co.jp/products/wireless-communication/specified-low-power-radio-modules/bp35c2-product#productDetail)
+
 
 ## Menu
 
@@ -53,6 +60,7 @@ let eSM = require('e-smartmeter-echonet-lite');
 // config
 let config = {
   donglePass: 'COM3',  // Your USB dongle port
+  dongleType: 'ROHM',  // 'ROHM' or 'TESSERA', default:TESSERA
   id:'01234567890QWERTYUIOPASDFGHJKLZX',   // Bルート認証ID設定, Your B route ID.
   password:'123456789ABC',   // Bルート認証パスワード設定, Your B route password.
   observationEPCs: ['80','81','82','88','8A','8D','97','98','9D','9E','9F',
@@ -107,18 +115,19 @@ eSM.setObserveFacilities( 10 * 1000, () => {
 
 ```JavaScript
 {
-  donglePass: string,  // Your USB dongle port. **Required**.
-  id: string,   // Bルート認証ID設定, Your B route ID. **Required**.
-  password:string,   // Bルート認証パスワード設定, Your B route password. **Required**.
+  donglePass: String,  // Your USB dongle port. **Required**.
+  dongleType: String,  // 'ROHM' or 'TESSERA', default:TESSERA
+  id: String,   // Bルート認証ID設定, Your B route ID. **Required**.
+  password:String,   // Bルート認証パスワード設定, Your B route password. **Required**.
   observationEPCs: array, element is string,  // Optional.
-  debug: boolean,  // debug mode , Optional. default false.
-  EPANDESC: strunct {  // Connection info for smart meter, Optional. (for resume)
-	channel: string,
-	channelPage: string,
-	panID: string,
-	address: string,
-	lqi: string,
-	pairID: string'
+  debug: Boolean,  // debug mode , Optional. default false.
+  EPANDESC: Strunct {  // Connection info for smart meter, Optional. (for resume connection)
+	channel: String,
+	channelPage: String,
+	panID: String,
+	address: String,
+	lqi: String,
+	pairID: String'
   }
 }
 ```
@@ -421,7 +430,8 @@ ESmartMeter.write = function ( str )
 ### EL送信のベース
 
 ```JavaScript
-ESmartMeter.sendBase = function (ip, buffer)
+ESmartMeter.sendBaseR = function (ip, buffer)  // for ROHM
+ESmartMeter.sendBaseT = function (ip, buffer)  // for TESSERA
 ```
 
 ### EL送信の基本的なAPI，大体これを使ったらよい
@@ -473,7 +483,7 @@ ESmartMeter.setObserveFacilities = function ( interval, onChanged ) // interval,
 
 ### ネットワーク内のEL機器全体情報を更新（内部処理）
 
-受信したら勝手に実行される
+受信したら勝手に実行される．
 
 ```JavaScript
 ESmartMeter.renewFacilities = function (ip, els)
@@ -585,5 +595,6 @@ x Warranty
 
 ## Log
 
+- 2.0.0 ROHM BP35C2に対応
 - 1.0.1 READMEだけ修正
-- 1.0.0 とりあえず開発してpublish
+- 1.0.0 とりあえず開発してpublish、TESSERA RL7023のみ対応
