@@ -3,7 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 'use strict';
 
-const SerialPort = require('serialport')
+const SerialPort = require('serialport');
 
 
 //////////////////////////////////////////////////////////////////////
@@ -11,35 +11,56 @@ const SerialPort = require('serialport')
 
 // RL7023Stick-D
 let ESmartMeter = {
-  WiSunDongle: 'COM3',  // WiSUNドングルのパス（ユーザ設定）
-  deviceType: 'ROHM',  // WiSUNドングルのデバイスタイプ（TESSERA, ROHM）
-  WiID: '',     // スマメのBルート認証ID設定（電力会社に申請，ユーザ設定）
-  WiPASS: '',   // スマメのBルート認証パスワード設定（電力会社に申請，ユーザ設定）
-  port : null,  // スマートメータと通信するシリアルポートオブジェクト
-  state: 'disconnected',  // 状態管理
-  debug: false,   // trueでデバッグモード
-  facilities: {},	// 機器情報リスト
-  EPANDESC: {},  // スマートメータとの通信情報
-  IPv6: '',  // 送信先（スマートメータ）のIPを覚えておく
-  userfunc: null,  // 受信データのユーザコールバック
-  tid: [0,0],   // transaction id
-  portConfig: {  // serial port config
-	baudRate: 115200,
-	dataBits: 8,
-	stopBits: 1,
-	parity: 'none' },
-  connectedTimeoutID: null,  // connection成功のタイムアウト
-  observationEPCs: [],   // 監視対象のEPCリスト
-  observationTimerEnabled: false,  // timerでの監視フラグ
-  observationTimerID: {},  // ID管理，Timeoutクラス
-  observationDispersion: 30000  // 監視間隔の分散 (* 0..<1), 30s
+	WiSunDongle: 'COM3',  // WiSUNドングルのパス（ユーザ設定）
+	deviceType: 'ROHM',  // WiSUNドングルのデバイスタイプ（TESSERA, ROHM）
+	WiID: '',     // スマメのBルート認証ID設定（電力会社に申請，ユーザ設定）
+	WiPASS: '',   // スマメのBルート認証パスワード設定（電力会社に申請，ユーザ設定）
+	port : null,  // スマートメータと通信するシリアルポートオブジェクト
+	state: 'disconnected',  // 状態管理
+	debug: false,   // trueでデバッグモード
+	portList: [],   // シリアルポートリスト
+	facilities: {},	// 機器情報リスト
+	EPANDESC: {},  // スマートメータとの通信情報
+	IPv6: '',  // 送信先（スマートメータ）のIPを覚えておく
+	userfunc: null,  // 受信データのユーザコールバック
+	tid: [0,0],   // transaction id
+	portConfig: {  // serial port config
+		baudRate: 115200,
+		dataBits: 8,
+		stopBits: 1,
+		parity: 'none' },
+	connectedTimeoutID: null,  // connection成功のタイムアウト
+	observationEPCs: [],   // 監視対象のEPCリスト
+	observationTimerEnabled: false,  // timerでの監視フラグ
+	observationTimerID: {},  // ID管理，Timeoutクラス
+	observationDispersion: 30000  // 監視間隔の分散 (* 0..<1), 30s
 };
 
+
+//////////////////////////////////////////////////////////////////////
+// シリアルポートのリスト取得
+ESmartMeter.renewPortList = async function () {
+	ESmartMeter.portList = [];
+
+	await SerialPort.list()
+		.then( (ports) => {
+			ESmartMeter.portList = ports;
+		}) .catch( (err) => {
+			console.log(err, "e")
+		});
+	return ESmartMeter.portList;
+};
+
+
+
+//////////////////////////////////////////////////////////////////////
+// このモジュールの初期化
 // ex. donglePass: forWin 'COM3', forLinux '/dev/ttyACM0', forMac '/dev/tty-usbserial1'
 // id = Bルート認証ID設定
 // password = Bルート認証パスワード設定
-ESmartMeter.initialize = function( config, callback ) {
+ESmartMeter.initialize = async function( config, callback ) {
 
+	ESmartMeter.port = null;
 	ESmartMeter.debug = config.debug ? config.debug : false;
 	ESmartMeter.WiSunDongle = config.donglePass;
 	ESmartMeter.deviceType  = config.dongleType ? config.dongleType : 'TESSERA';
@@ -56,15 +77,44 @@ ESmartMeter.initialize = function( config, callback ) {
 	ESmartMeter.observationTimerEnabled = false;
 	ESmartMeter.observationTimerID = {};  // ID管理，Timeoutクラス
 	ESmartMeter.observationDispersion = 30000;
+	await ESmartMeter.renewPortList();  // シリアルポートリスト更新
 
+	if( ESmartMeter.portList.find( port => port.path === config.donglePass ) ) {
+		// 指定のポートがそのまま発見できた
+	}else{
+		console.error( '-- Warning: SM:initialize(), specified port "' + config.donglePass + '" is not found. available ports are:' );
+		console.dir( ESmartMeter.portList );
+	}
 
 	// ポートの設定と通信開始
+	let serialOpened = false;
 	ESmartMeter.state = 'portOpen';
-	ESmartMeter.debug ? console.log('-- SM:portOpen'):0;
-	ESmartMeter.port = new SerialPort(ESmartMeter.WiSunDongle, ESmartMeter.portConfig, function (err) {
+	ESmartMeter.debug ? console.log('-- SM:portOpen try', ESmartMeter.WiSunDongle ):0;
+
+	// ユーザ指定のポートで接続
+	ESmartMeter.port = await new SerialPort(ESmartMeter.WiSunDongle, ESmartMeter.portConfig, function (err) {
 		if (err) {
 			ESmartMeter.userfunc( {state: ESmartMeter.state, data:null}, null, null, err );
-			return console.log('-- SM:portOpen Error: ', err.message)
+			console.log('-- SM:portOpen Error: ', err.message);
+
+			// ユーザ指定でエラーしたので，システムから見つかったポートをトライ
+			ESmartMeter.portList.forEach( async (port) => {
+				if( serialOpened ) return true;  // 接続出来たらforEach終了
+				ESmartMeter.WiSunDongle = port.path;
+				ESmartMeter.debug ? console.log('-- SM:portOpen try', ESmartMeter.WiSunDongle ):0;
+				ESmartMeter.port = await new SerialPort( ESmartMeter.WiSunDongle, ESmartMeter.portConfig, function (err) {
+					if (err) {
+						ESmartMeter.userfunc( {state: ESmartMeter.state, data:null}, null, null, err );
+						return console.log('-- SM:portOpen Error: ', err.message)
+					}else{
+						console.log( '-- SM:portOpen "' + ESmartMeter.WiSunDongle + '" is opened.');
+						serialOpened = true;
+					}
+				});
+			});
+
+		}else{
+			serialOpened = true;
 		}
 	});
 
@@ -75,7 +125,7 @@ ESmartMeter.initialize = function( config, callback ) {
 		// console.dir( recvData );
 
 		switch( ESmartMeter.state ) {
-		  case 'setSFE':   // SFE設定中
+			case 'setSFE':   // SFE設定中
 			if( data.toString('UTF-8') == 'OK' ) { // 設定OK
 				ESmartMeter.state = 'setPassword';
 				ESmartMeter.debug ? console.log('-- SM:setPassword, set ', ESmartMeter.WiPASS):0;
@@ -86,7 +136,7 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'setPassword':  // パスワード設定中
+			case 'setPassword':  // パスワード設定中
 			if( data.toString('UTF-8') == 'OK' ) {  // 設定OK
 				ESmartMeter.state = 'setID';
 				ESmartMeter.debug ? console.log('-- SM:setID, set id', ESmartMeter.WiID):0;
@@ -97,7 +147,7 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'setID':  // ID設定中
+			case 'setID':  // ID設定中
 			if( data.toString('UTF-8') == 'OK' ) {  // 設定OK
 				if( ESmartMeter.EPANDESC && ESmartMeter.EPANDESC.channel ) { // すでにチャンネルをわかっていればscanしない
 					ESmartMeter.state = 'setChannel';
@@ -117,7 +167,7 @@ ESmartMeter.initialize = function( config, callback ) {
 				ESmartMeter.write('SKSETRBID ' + ESmartMeter.WiID  );  // set id
 			}
 
-		  case 'scanning':  // スキャン中
+			case 'scanning':  // スキャン中
 			if( data.toString('UTF-8') == 'OK' ) { break; }  // スキャンのOKは無視
 
 			ESmartMeter.EPANDESC = ESmartMeter.getEPANDESC( data.toString('UTF-8') );  // スキャン成功
@@ -136,7 +186,7 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'setChannel': // チャンネル設定中
+			case 'setChannel': // チャンネル設定中
 			if( data.toString('UTF-8') == 'OK' ) {  // 設定OK
 				ESmartMeter.state = 'setPanID';
 				ESmartMeter.debug ? console.log('-- SM:setPanID, set pan id', ESmartMeter.EPANDESC.panID):0;
@@ -147,7 +197,7 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'setPanID':  // Pan ID設定中
+			case 'setPanID':  // Pan ID設定中
 			if( data.toString('UTF-8') == 'OK' ) {  // 設定OK
 				ESmartMeter.state = 'getIPv6';
 				ESmartMeter.debug ? console.log('-- SM:getIPv6, get IPv6, mac addr', ESmartMeter.EPANDESC.address):0;
@@ -158,7 +208,7 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'getIPv6':  // IPv6取得
+			case 'getIPv6':  // IPv6取得
 			ESmartMeter.IPv6 = ESmartMeter.getIPv6( data.toString('UTF-8') ); // 取得できた
 			if( ESmartMeter.IPv6 != null ) {
 				ESmartMeter.state = 'setIPv6';
@@ -170,7 +220,7 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'setIPv6':  // IPv6設定中
+			case 'setIPv6':  // IPv6設定中
 			if( data.toString('UTF-8') == 'OK' ) {  // 設定OK
 				ESmartMeter.state = 'connected';
 				ESmartMeter.debug ? console.log('-- SM:connected' ):0;
@@ -181,7 +231,7 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'connected':  // 接続した，EVENT 24なら失敗，EVENT 25なら接続完了
+			case 'connected':  // 接続した，EVENT 24なら失敗，EVENT 25なら接続完了
 			ESmartMeter.debug ? console.log('-- SM:connected'):0;
 
 			// うまく発見するのは相当難しいことが判明
@@ -221,14 +271,14 @@ ESmartMeter.initialize = function( config, callback ) {
 			}
 			break;
 
-		  case 'available':  // 手続き終了，利用可能
+			case 'available':  // 手続き終了，利用可能
 			if( recvData.count == 0 ) { break; } // 受信データなしの時は無視
 			if( recvData.count == 1 && recvData.msgs[0][0] == 'OK' ) { break; } // OKのみの時は無視
 
 			ESmartMeter.returner( { state:'available', data:recvData, raw:data }, ESmartMeter.userfunc );
 			break;
 
-		  default:
+			default:
 		}
 	});
 
@@ -238,6 +288,7 @@ ESmartMeter.initialize = function( config, callback ) {
 	ESmartMeter.debug ? console.log('-- SM:setSFE, set echoback is disabled') : 0;
 	ESmartMeter.write('SKSREG SFE 0' ); // echo back disable
 }
+
 
 ESmartMeter.release = function() {
 	if( ESmartMeter.port != null ) {
@@ -265,22 +316,22 @@ ESmartMeter.getEPANDESC = function ( str ) {
 		row = row.split(':');
 
 		switch( row[0] ) {
-		  case 'Channel':
+			case 'Channel':
 			ret.channel = row[1];
 			break;
-		  case 'Channel Page':
+			case 'Channel Page':
 			ret.channelPage = row[1];
 			break;
-		  case 'Pan ID':
+			case 'Pan ID':
 			ret.panID = row[1];
 			break;
-		  case 'Addr':
+			case 'Addr':
 			ret.address = row[1];
 			break;
-		  case 'LQI':
+			case 'LQI':
 			ret.lqi = row[1];
 			break;
-		  case 'PairID':
+			case 'PairID':
 			ret.pairID = row[1];
 			break;
 		}
@@ -315,10 +366,10 @@ ESmartMeter.parseReceive = function(streamData) {
 	let msgIdx = 0;
 	for( let i=0; i<arr.length; i+=1 ) {
 		switch( arr[i] ) {
-		  case 'OK':
-		  case 'EVENT':
-		  case 'ERXUDP':
-		  case 'EEDSCAN':
+			case 'OK':
+			case 'EVENT':
+			case 'ERXUDP':
+			case 'EEDSCAN':
 			if( msgIdx != 0 ) { // msgがあれば登録 sliceに引数なしでdeep copy
 				ret.msgs.push( msg.slice() );
 				msgIdx = 0;
@@ -329,7 +380,7 @@ ESmartMeter.parseReceive = function(streamData) {
 			msgIdx += 1;
 			break;
 
-		  default:
+			default:
 			if( ret.count != 0 ) {  // OK, EVENT,ERXUDPが来る前のごみは無視
 				msg[msgIdx] = arr[i];
 				msgIdx += 1;

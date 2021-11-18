@@ -270,6 +270,23 @@ function( sm, rinfo, els, err ) {
 ```
 
 
+
+### ポートリスト取得, renewPortList
+
+利用可能なポートリストを更新する
+
+renew serial port list
+
+```JavaScript
+ESmartMeter.renewPortList = function()
+```
+
+```JavaScript
+ESmartMeter.portList: Array(port)
+```
+
+
+
 ### 解放, release
 
 通信を終了します．
@@ -595,6 +612,7 @@ x Warranty
 
 ## Log
 
+- 2.1.0 method( renewPortList, release )を追加
 - 2.0.0 ROHM BP35C2に対応
 - 1.0.1 READMEだけ修正
 - 1.0.0 とりあえず開発してpublish、TESSERA RL7023のみ対応
