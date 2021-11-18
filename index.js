@@ -57,7 +57,7 @@ ESmartMeter.renewPortList = async function () {
 ESmartMeter.onReceive = function (data) {
 	data = data.slice( 0, -2 ); // 受信データのCrLfを消す
 	let recvData = ESmartMeter.parseReceive(data);
-	// console.dir( recvData );
+	console.dir( recvData );
 
 	switch( ESmartMeter.state ) {
 		case 'setSFE':   // SFE設定中
@@ -192,6 +192,7 @@ ESmartMeter.onReceive = function (data) {
 					// ESmartMeter.sendOPC1(ESmartMeter.IPv6, '05FF01', '028801', '62', '9F', '00');
 					// ESmartMeter.getD5();
 					ESmartMeter.userfunc( { state:'available', data:recvData}, null, null, null );
+
 				}else if( msg.length >= 2 && msg[0]=='EVENT' && msg[1]=='24' ) {
 					// EVENT 24は明確に失敗
 					ESmartMeter.debug ? console.log('-- SM:connected failed (EVENT 24)'):0;
@@ -270,7 +271,7 @@ ESmartMeter.initialize = async function( config, callback ) {
 	// ユーザ指定のポートで接続
 	ESmartMeter.port = await new SerialPort(ESmartMeter.WiSunDongle, ESmartMeter.portConfig, function (err) {
 		if (!err) {
-			console.log('-- User port is ok.');
+			ESmartMeter.debug ? console.log('-- SM:portOpen User port is ok. ', ESmartMeter.WiSunDongle ):0;
 			// ESmartMeter.port.on('open', ESmartMeter.onOpen ); 	// シリアルポートが準備できたらやる関数登録
 			ESmartMeter.port.on('data', ESmartMeter.onReceive ); 	// 受信関数登録
 			ESmartMeter.port.on('close', ESmartMeter.onClose );	// close確認

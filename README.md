@@ -612,6 +612,7 @@ x Warranty
 
 ## Log
 
+- 2.1.2 ログ消すの忘れた
 - 2.1.1 初期化のバグを修正
 - 2.1.0 method( renewPortList, release )を追加
 - 2.0.0 ROHM BP35C2に対応
