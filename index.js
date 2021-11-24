@@ -58,7 +58,7 @@ ESmartMeter.renewPortList = async function () {
 ESmartMeter.onReceive = function (data) {
 	data = data.slice( 0, -2 ); // 受信データのCrLfを消す
 	let recvData = ESmartMeter.parseReceive(data);
-	console.dir( recvData );
+	// console.dir( recvData );
 
 	switch( ESmartMeter.state ) {
 		case 'setSFE':   // SFE設定中
