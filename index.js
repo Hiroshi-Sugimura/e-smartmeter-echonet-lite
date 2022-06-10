@@ -96,7 +96,7 @@ ESmartMeter.onReceive = function (data) {
 				if( ESmartMeter.deviceType == 'ROHM' ) {
 					ESmartMeter.write('SKSCAN 2 FFFFFFFF 4 0'); // ROHMのコマンド
 				}else{
-					ESmartMeter.write('SKSCAN 2 FFFFFFFF 6'); // TESSERAのコマンド
+					ESmartMeter.write('SKSCAN 2 FFFFFFFF 6'); // TESSERA, JORJINのコマンド
 				}
 			}
 		}else{
@@ -135,7 +135,7 @@ ESmartMeter.onReceive = function (data) {
 						if( ESmartMeter.deviceType == 'ROHM' ) {
 							ESmartMeter.write('SKSCAN 2 FFFFFFFF 6 0'); // ROHMのコマンド
 						}else{
-							ESmartMeter.write('SKSCAN 2 FFFFFFFF 6'); // TESSERAのコマンド，スキャン時間6秒
+							ESmartMeter.write('SKSCAN 2 FFFFFFFF 6'); // TESSERA, JORJINのコマンド，スキャン時間6秒
 						}
 					}
 				}
@@ -276,7 +276,6 @@ ESmartMeter.onClose = function () {
 
 //////////////////////////////////////////////////////////////////////
 // このモジュールの初期化
-// ex. donglePass: forWin 'COM3', forLinux '/dev/ttyACM0', forMac '/dev/tty-usbserial1'
 // id = Bルート認証ID設定
 // password = Bルート認証パスワード設定
 ESmartMeter.initialize = async function( config, callback ) {
@@ -310,9 +309,9 @@ ESmartMeter.initialize = async function( config, callback ) {
 	let comList = await ESmartMeter.portList.filter( (p) => {
 		if( p.vendorId == '0403' && p.productId == '6015') { // OMRON or TESSERA
 			return p;
-		}else if( p.vendorId == '0403' && p.productId == '6001') { // OMRON or TESSERA
-			ESmartMeter.deviceType = 'JORJIN'
-				return p;
+		}else if( p.vendorId == '0403' && p.productId == '6001') { // JORJIN
+			ESmartMeter.deviceType = 'JORJIN';
+			return p;
 		}
 	});
 
@@ -937,14 +936,12 @@ ESmartMeter.getStaticProfObj = function() {
 		0x05, 0xFF, 0x01,
 		0x0E, 0xF0, 0x01,
 		0x62,
-		0x07,
+		0x05,
 		0x80, 0x00,
 		0x82, 0x00,
 		0xD3, 0x00,
 		0xD4, 0x00,
-		0xD5, 0x00,
 		0xD6, 0x00,
-		0xD7, 0x00
 		]);
 
 	// データができたので送信する
@@ -983,8 +980,7 @@ ESmartMeter.getStaticMeterObj = function() {
 		0x05, 0xFF, 0x01,
 		0x02, 0x88, 0x01,
 		0x62,
-		0x0B,
-		0x80, 0x00,
+		0x0A,
 		0x81, 0x00,
 		0x82, 0x00,
 		0x8A, 0x00,

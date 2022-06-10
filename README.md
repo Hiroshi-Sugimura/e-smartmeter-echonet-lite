@@ -625,6 +625,7 @@ x Warranty
 
 ## Log
 
+- 2.6.1 getStaticのプロパティが多すぎたので減らした
 - 2.6.0 ドングル挿抜対応、connectingのログを軽く、portのpath自動化、node-serialport ver10以上対応、ドングルぬいた時のコネクションcloseがユーザのコールバックからわかるように、channel scanがたまに失敗するのでリトライ追加、getStatic関数バグ修正、getStaticでプロファイルオブジェクトとメータオブジェクトの両方をとるように
 - 2.5.0 チャンネルスキャン中に邪魔しないように
 - 2.1.4 まだログ残ってた
