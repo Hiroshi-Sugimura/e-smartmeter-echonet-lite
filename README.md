@@ -59,7 +59,6 @@ let eSM = require('e-smartmeter-echonet-lite');
 ////////////////////////////////////////////////////////////////////////////
 // config
 let config = {
-  donglePass: 'COM3',  // Your USB dongle port
   dongleType: 'ROHM',  // 'ROHM' or 'TESSERA', default:TESSERA
   id:'01234567890QWERTYUIOPASDFGHJKLZX',   // Bルート認証ID設定, Your B route ID.
   password:'123456789ABC',   // Bルート認証パスワード設定, Your B route password.
@@ -115,13 +114,13 @@ eSM.setObserveFacilities( 10 * 1000, () => {
 
 ```JavaScript
 {
-  donglePass: String,  // Your USB dongle port. **Required**.
   dongleType: String,  // 'ROHM' or 'TESSERA', default:TESSERA
   id: String,   // Bルート認証ID設定, Your B route ID. **Required**.
   password:String,   // Bルート認証パスワード設定, Your B route password. **Required**.
   observationEPCs: array, element is string,  // Optional.
   debug: Boolean,  // debug mode , Optional. default false.
   EPANDESC: Strunct {  // Connection info for smart meter, Optional. (for resume connection)
+  	path: String,
 	channel: String,
 	channelPage: String,
 	panID: String,
@@ -523,6 +522,7 @@ npm i echonet-lite-conv
 
 ```JavaScript:Demo extended echonet-lite-conf
 //////////////////////////////////////////////////////////////////////
+const cron = require('node-cron');
 let eSM = require('e-smartmeter-echonet-lite');
 let ELconv = require('echonet-lite-conv');
 let util = require('util');
@@ -532,7 +532,6 @@ ELconv.initialize();  // コンバータを初期化しておく（JSON形式の
 ////////////////////////////////////////////////////////////////////////////
 // config
 let config = {
-  donglePass: 'COM3',  // Your USB dongle port
   id:'01234567890QWERTYUIOPASDFGHJKLZX',   // Bルート認証ID設定, Your B route ID.
   password:'123456789ABC',   // Bルート認証パスワード設定, Your B route password.
   observationEPCs: ['80','81','82','88','8A','8D','97','98','9D','9E','9F',
@@ -544,40 +543,54 @@ let connected = false;
 
 
 // 初期化, initializing
-eSM.initialize( config, ( sm, rinfo, els, err) => {
-	console.log( '## user function', (new Date()).toLocaleString(), '##' );
-	if( err ) {
-		console.log( 'eSM Error' );
-		console.dir( err );
-		return;
+cron.schedule('*/5 * * * * *', () => {
+	// 既に接続していたら機器情報の変化をみる。接続していなかったら接続する
+	// 5秒に1回、ポートの状況を監視している
+	if( connected ) {
+		// 機器情報の変化の監視
+		console.log( '## == facilities', (new Date()).toLocaleString(), '== ##' );
+		console.dir( eSM.facilities );
+
+	}else{
+		// 初期化
+		eSM.initialize( config, ( sm, rinfo, els, err) => {
+			console.log( '## user function', (new Date()).toLocaleString(), '##' );
+
+			if( err ) {
+				console.log( 'eSM Error:', err );
+				return;
+			}
+
+			console.dir( 'eSM:', sm);
+
+			// 切断された
+			if( sm.state == 'close' ) {
+				connected = false;
+				return;
+			}
+
+			// console.log( JSON.stringify(sm) );
+			// rinfo ? console.dir( rinfo ):0;
+			els ? console.dir( els ):0;
+
+			try{
+				// 初回接続時
+				if( !connected && sm.state == 'available' ) {
+					connected = true;
+
+					// config.observationEPCsのEPCを定期的にGetする
+					console.log('## start observation.');
+					eSM.startObservation( 30 * 1000 );
+
+					eSM.getStatic();
+				}
+			}catch(e){
+				console.error(e);
+			}
+			console.log( '## ============= ##' );
+		});
 	}
-	console.log( JSON.stringify(sm) );
-	rinfo ? console.dir( rinfo ):0;
-	els ? console.dir( els ):0;
 
-	try{
-		// 初回接続時, first connection
-		if( !connected && sm.state == 'available' ) {
-			connected = true;
-
-			// config.observationEPCsのEPCを定期的にGetする
-			eSM.startObservation( 60 * 1000 );
-		}
-	}catch(e){
-		console.error(e);
-	}
-	console.log( '## ============= ##' );
-
-});
-
-
-// 機器情報の変化の監視, observation for changing facilities
-eSM.setObserveFacilities( 10 * 1000, () => {
-	console.log( '## == onChanged', (new Date()).toLocaleString(), '== ##' );
-	ELconv.refer( eSM.facilities, function( devs ) {
-		console.log(util.inspect(devs,false,null));
-	});
-	console.log( '## ============= ##' );
 });
 ```
 
@@ -612,6 +625,7 @@ x Warranty
 
 ## Log
 
+- 2.6.0 ドングル挿抜対応、connectingのログを軽く、portのpath自動化、node-serialport ver10以上対応、ドングルぬいた時のコネクションcloseがユーザのコールバックからわかるように、channel scanがたまに失敗するのでリトライ追加、getStatic関数バグ修正、getStaticでプロファイルオブジェクトとメータオブジェクトの両方をとるように
 - 2.5.0 チャンネルスキャン中に邪魔しないように
 - 2.1.4 まだログ残ってた
 - 2.1.3 リトライ調整
