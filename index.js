@@ -54,11 +54,29 @@ ESmartMeter.renewPortList = async function () {
 };
 
 
+// 受信強度計算
+ESmartMeter.lqiAssess = function (lqi) {
+	let LQI = parseInt(lqi, 17);
+	let PdBm = (7*LQI-1970)/20;
+
+	if( LQI < 50 ) {
+		console.log('Bad condition. ', PdBm, 'dBm');
+	}else if( LQI < 100) {
+		console.log('Not good condition.', PdBm, 'dBm');
+	}else if( LQI < 150) {
+		console.log('Good condition.', PdBm, 'dBm');
+	}else{
+		console.log('Great condition.', PdBm, 'dBm');
+	}
+};
+
+
+
 
 // 受信関数
-ESmartMeter.onReceive = function (data) {
+ESmartMeter.onReceive = async function (data) {
 	data = data.slice( 0, -2 ); // 受信データのCrLfを消す
-	let recvData = ESmartMeter.parseReceive(data);
+	let recvData = await ESmartMeter.parseReceive(data);
 	// console.dir( recvData );
 
 	switch( ESmartMeter.state ) {
@@ -98,6 +116,7 @@ ESmartMeter.onReceive = function (data) {
 				}else{
 					ESmartMeter.write('SKSCAN 2 FFFFFFFF 6'); // TESSERA, JORJINのコマンド
 				}
+				// scanもtimeoutつけたほうが良い
 			}
 		}else{
 			ESmartMeter.debug ? console.log('-- SM:setID (SKSETRBID)', ESmartMeter.WiID):0;
@@ -105,6 +124,7 @@ ESmartMeter.onReceive = function (data) {
 		}
 
 		case 'scanning':  // スキャン中
+		ESmartMeter.debug ? process.stdout.write('.'):0;
 		if( data.toString('UTF-8') == 'OK' ) { break; }  // スキャンのOKは無視
 
 		// scanning中はいくつかメッセージを受信する
@@ -115,6 +135,7 @@ ESmartMeter.onReceive = function (data) {
 					// EVENT 20はEPANDESC
 					ESmartMeter.EPANDESC = ESmartMeter.getEPANDESC( data.toString('UTF-8') );  // スキャン成功
 					ESmartMeter.debug ? console.dir( ESmartMeter.EPANDESC ) : 0;
+					ESmartMeter.debug ? ESmartMeter.lqiAssess( ESmartMeter.EPANDESC.lqi ):0;
 
 				}else if( msg.length >= 2 && msg[0]=='EVENT' && msg[1]=='22' ) {
 					// EVENT 22はSCAN終了
@@ -193,7 +214,7 @@ ESmartMeter.onReceive = function (data) {
 		// うまく発見するのは相当難しい
 		// 結局，connectingの後でEVENT 25が来るか，3分まってリトライする
 		if( ESmartMeter.connectedTimeoutID == null ) {
-			ESmartMeter.debug ? console.log('-- SM:setConnectedTimeout'):0;
+			ESmartMeter.debug ? console.log(' SM:setConnectedTimeout'):0;
 			ESmartMeter.connectedTimeoutID = setTimeout( () => {
 				ESmartMeter.debug ? console.log('-- SM:clearConnectedTimeout'):0;
 				ESmartMeter.debug ? console.log('-- SM:connecting EVENT not found (timeout) and retry.'):0;
@@ -212,19 +233,21 @@ ESmartMeter.onReceive = function (data) {
 					if( ESmartMeter.connectedTimeoutID ) {
 						ESmartMeter.debug ? console.log('-- SM:clearConnectedTimeout'):0;
 						clearTimeout(ESmartMeter.connectedTimeoutID);
+						ESmartMeter.connectedTimeoutID = null;
 					}
 					ESmartMeter.userfunc( { state:'available', data:recvData}, null, null, null );
 
 				}else if( msg.length >= 2 && msg[0]=='EVENT' && msg[1]=='24' ) {
 					// EVENT 24は失敗
-					ESmartMeter.debug ? console.log('-- SM:connecting failed (EVENT 24)'):0;
+					ESmartMeter.debug ? console.log(' SM:connecting failed (EVENT 24)'):0;
 					ESmartMeter.state = 'connecting-retry';
 					if( ESmartMeter.connectedTimeoutID ) {
 						ESmartMeter.debug ? console.log('-- SM:clearConnectedTimeout'):0;
 						clearTimeout(ESmartMeter.connectedTimeoutID);
+						ESmartMeter.connectedTimeoutID = null;
 					}
 					ESmartMeter.debug ? console.log('-- SM:retry (SKINFO)' ):0;
-					ESmartMeter.write('SKINFO' ); // リトライ＋情報取得
+					ESmartMeter.write('SKINFO' ); // リトライトリガー＋情報取得
 				}
 			});
 		}
@@ -238,9 +261,8 @@ ESmartMeter.onReceive = function (data) {
 			// 失敗したときの状態を確認
 			// ESmartMeter.write('SKSREG S2' ); // channel
 			// ESmartMeter.write('SKSREG S3' ); // panID
-			ESmartMeter.write('SKTERM'); // 失敗，通信終了
-			ESmartMeter.write('SKCLOSE 1'); // 失敗，通信終了
-			ESmartMeter.userfunc( { state:'failed', data:recvData}, null, null, null );
+			ESmartMeter.release();
+			ESmartMeter.userfunc( { state:'failed', data:recvData}, null, null, 'Error: The maximum number of retries has been reached.' );
 		}else{
 			ESmartMeter.retryRemain -= 1;
 			ESmartMeter.state = 'connecting';
@@ -258,6 +280,7 @@ ESmartMeter.onReceive = function (data) {
 
 		default:
 	}
+	await ESmartMeter.sleep( 1000 );  // 1s
 };
 
 // ポートオープンしたら
@@ -899,17 +922,13 @@ ESmartMeter.getEB = function() {
 	return ESmartMeter.sendOPC1(ESmartMeter.IPv6, '05FF01', '028801', '62', 'EB', '00');
 };
 
-ESmartMeter.getD5 = function() {
-	ESmartMeter.debug ? console.log('-- SM:getD5'):0;
-	return ESmartMeter.sendOPC1(ESmartMeter.IPv6, '05FF01', '05FF01', '62', 'D5', '00');
-};
-
 ESmartMeter.get9F = function() {
 	ESmartMeter.debug ? console.log('-- SM:get9F'):0;
 	return ESmartMeter.sendOPC1(ESmartMeter.IPv6, '05FF01', '028801', '62', '9F', '00');
 };
 
 
+// メーターのプロファイルオブジェクトの設定を取得
 ESmartMeter.getStaticProfObj = function() {
 	console.log('-- SM:getStaticProfObj');
 
@@ -941,7 +960,7 @@ ESmartMeter.getStaticProfObj = function() {
 		0x82, 0x00,
 		0xD3, 0x00,
 		0xD4, 0x00,
-		0xD6, 0x00,
+		0xD6, 0x00
 		]);
 
 	// データができたので送信する
@@ -954,6 +973,7 @@ ESmartMeter.getStaticProfObj = function() {
 };
 
 
+// メーターオブジェクトの設定、とくに静的なEPCを取得
 ESmartMeter.getStaticMeterObj = function() {
 	console.log('-- SM:getStaticMeterObj');
 
@@ -980,14 +1000,13 @@ ESmartMeter.getStaticMeterObj = function() {
 		0x05, 0xFF, 0x01,
 		0x02, 0x88, 0x01,
 		0x62,
-		0x0A,
+		0x09,
 		0x81, 0x00,
 		0x82, 0x00,
 		0x8A, 0x00,
 		0x8D, 0x00,
 		0x9D, 0x00,
 		0x9E, 0x00,
-		0x9F, 0x00,
 		0xD3, 0x00,
 		0xD7, 0x00,
 		0xE1, 0x00
@@ -1003,11 +1022,61 @@ ESmartMeter.getStaticMeterObj = function() {
 };
 
 
+// メーターの消費電力関連を取得
+// D3(係数), D7(積算電力量有効桁数), E1(積算電力量単位)は一緒にとっておいたほうが良い
+// D3がない時は1
+ESmartMeter.getMeasuredValues = function() {
+	console.log('-- SM:getMeasuredValues');
+
+	// TIDの調整
+	let carry = 0; // 繰り上がり
+	if( ESmartMeter.tid[1] == 0xff ) {
+		ESmartMeter.tid[1] = 0;
+		carry = 1;
+	} else {
+		ESmartMeter.tid[1] += 1;
+	}
+	if( carry == 1 ) {
+		if( ESmartMeter.tid[0] == 0xff ) {
+			ESmartMeter.tid[0] = 0;
+		} else {
+			ESmartMeter.tid[0] += 1;
+		}
+	}
+
+	// 全静的プロパティゲット
+	let buffer = Buffer.from([
+		0x10, 0x81,
+		ESmartMeter.tid[0], ESmartMeter.tid[1],
+		0x05, 0xFF, 0x01,
+		0x02, 0x88, 0x01,
+		0x62,
+		0x07,
+		0xD3, 0x00,
+		0xD7, 0x00,
+		0xE0, 0x00,
+		0xE1, 0x00,
+		0xE3, 0x00,
+		0xE7, 0x00,
+		0xE8, 0x00
+		]);
+
+	// データができたので送信する
+	// console.dir( buffer );
+	if( ESmartMeter.deviceType == 'ROHM' ) {
+		return ESmartMeter.sendBaseR(ESmartMeter.IPv6, buffer);
+	}else{
+		return ESmartMeter.sendBaseT(ESmartMeter.IPv6, buffer);
+	}
+};
+
+
+
 ESmartMeter.getStatic = async function () {
 	console.log('-- SM:getStatic');
 
 	ESmartMeter.getStaticProfObj();
-	await ESmartMeter.sleep( 5000 );  // 5s
+	await ESmartMeter.sleep( 10000 );  // 10s
 	ESmartMeter.getStaticMeterObj();
 };
 
