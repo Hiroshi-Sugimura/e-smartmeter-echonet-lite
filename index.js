@@ -134,8 +134,10 @@ ESmartMeter.onReceive = async function (data) {
 				if( msg.length >= 2 && msg[0]=='EVENT' && msg[1]=='20' ) {
 					// EVENT 20はEPANDESC
 					ESmartMeter.EPANDESC = ESmartMeter.getEPANDESC( data.toString('UTF-8') );  // スキャン成功
-					ESmartMeter.debug ? console.dir( ESmartMeter.EPANDESC ) : 0;
-					ESmartMeter.debug ? (ESmartMeter.EPANDESC.lqi ? ESmartMeter.lqiAssess( ESmartMeter.EPANDESC.lqi ):0) :0;
+					if( ESmartMeter.debug ) {
+						console.dir( ESmartMeter.EPANDESC );
+						ESmartMeter.EPANDESC.lqi ? ESmartMeter.lqiAssess( ESmartMeter.EPANDESC.lqi ):0;
+					}
 
 				}else if( msg.length >= 2 && msg[0]=='EVENT' && msg[1]=='22' ) {
 					// EVENT 22はSCAN終了
