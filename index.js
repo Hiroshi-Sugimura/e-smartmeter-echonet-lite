@@ -758,8 +758,8 @@ ESmartMeter.returner = function(sm, callback) {
 		});
 
 	} catch (e) {
-		console.error( e );
-		throw new Error('ESmartMeter.returner(): detail error. sm.data: ' + JSON.stringify(sm.data) );
+		console.error(e);
+		throw e;
 	}
 };
 
