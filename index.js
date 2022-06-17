@@ -277,7 +277,11 @@ ESmartMeter.onReceive = async function (data) {
 		if( recvData.count == 0 ) { break; } // 受信データなしの時は無視
 		if( recvData.count == 1 && recvData.msgs[0][0] == 'OK' ) { break; } // OKのみの時は無視
 
-		ESmartMeter.returner( { state:'available', data:recvData, raw:data }, ESmartMeter.userfunc );
+		try{
+			ESmartMeter.returner( { state:'available', data:recvData, raw:data }, ESmartMeter.userfunc );
+		}catch(e){
+			ESmartMeter.userfunc( { state:'error', data:null}, null, null, e );
+		}
 		break;
 
 	  default:

@@ -625,6 +625,7 @@ x Warranty
 
 ## Log
 
+- 2.6.9 serial通信上で問題がでたときにonReceive内部でExceptionされるとプログラムが死ぬのを回避
 - 2.6.8 EA,EBも聞く
 - 2.6.7 errorハンドリングミスの修正
 - 2.6.6 なおした
