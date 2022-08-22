@@ -330,7 +330,9 @@ ESmartMeter.initialize = async function( config, callback ) {
 	ESmartMeter.observationTimerEnabled = false;
 	ESmartMeter.observationTimerID = {};  // ID管理，Timeoutクラス
 	ESmartMeter.observationDispersion = 30000;
+
 	await ESmartMeter.renewPortList();  // シリアルポートリスト更新
+	ESmartMeter.debug ? console.log('-- SM:PortList:', ESmartMeter.portList ):0;
 
 
 	// 環境センサーに接続
