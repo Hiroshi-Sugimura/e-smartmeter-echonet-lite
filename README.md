@@ -625,6 +625,7 @@ x Warranty
 
 ## Log
 
+- 2.7.1 callback指定がおかしいときのrelease対応
 - 2.7.0 serial portのデバッグちょっと追加
 - 2.6.9 serial通信上で問題がでたときにonReceive内部でExceptionされるとプログラムが死ぬのを回避
 - 2.6.8 EA,EBも聞く
