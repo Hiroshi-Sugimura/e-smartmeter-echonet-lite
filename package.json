@@ -1,6 +1,6 @@
 {
   "name": "e-smartmeter-echonet-lite",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "description": "This module provides electric smart meter for ECHONET Lite protocol API.",
   "main": "index.js",
   "dependencies": {

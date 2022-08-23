@@ -308,13 +308,13 @@ ESmartMeter.onClose = function () {
 // id = Bルート認証ID設定
 // password = Bルート認証パスワード設定
 ESmartMeter.initialize = async function( config, callback ) {
+	ESmartMeter.debug = config.debug ? config.debug : false;
 	if( ESmartMeter.port ) {  // すでに通信している
-		// ESmartMeter.userfunc( {state:'portOpen'}, null, null, 'Error: port is used already.' );
+		ESmartMeter.debug ?ESmartMeter.userfunc( {state:'portOpen'}, null, null, 'Error: port is used already.' ):0;
 		return;
 	}
 
 	ESmartMeter.port = null;
-	ESmartMeter.debug = config.debug ? config.debug : false;
 	ESmartMeter.deviceType  = config.dongleType ? config.dongleType : 'TESSERA';
 	ESmartMeter.WiID = config.id;
 	ESmartMeter.WiPASS = config.password;
@@ -333,6 +333,9 @@ ESmartMeter.initialize = async function( config, callback ) {
 
 	await ESmartMeter.renewPortList();  // シリアルポートリスト更新
 	ESmartMeter.debug ? console.log('-- SM:PortList:', ESmartMeter.portList ):0;
+	ESmartMeter.debug ? console.log('-- SM:deviceType:', ESmartMeter.deviceType):0;
+	ESmartMeter.debug ? console.log('-- SM:WiID:', ESmartMeter.WiID):0;
+	ESmartMeter.debug ? console.log('-- SM:WiPASS:', ESmartMeter.WiPASS):0;
 
 
 	// 環境センサーに接続
