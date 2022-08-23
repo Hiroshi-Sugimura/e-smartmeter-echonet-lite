@@ -625,6 +625,7 @@ x Warranty
 
 ## Log
 
+- 2.7.3 port resume
 - 2.7.2 debugもうちょい対応a
 - 2.7.1 callback指定がおかしいときのrelease対応a
 - 2.7.0 serial portのデバッグちょっと追加

@@ -298,8 +298,14 @@ ESmartMeter.onOpen = function () {
 };
 
 ESmartMeter.onClose = function () {
-	ESmartMeter.port = null;
 	ESmartMeter.debug ? console.log('-- SM:close') : 0;
+
+	ESmartMeter.port.resume(function(e){
+      // reconnectDevice(); // Serial Port Initialization Function. It's your method to declare serial port.
+      console.log("Error on resuming port:", e);
+    });
+
+	ESmartMeter.port = null;
 	ESmartMeter.release();
 };
 
@@ -377,17 +383,19 @@ ESmartMeter.initialize = async function( config, callback ) {
 
 
 ESmartMeter.release = function() {
-	if( ESmartMeter.port != null ) {
-		ESmartMeter.port.close();
-		ESmartMeter.port = null;
-	}
-	ESmartMeter.stopObservation();
-
 	ESmartMeter.state = 'close';
 	if( ESmartMeter.userfunc ) {
 		ESmartMeter.userfunc( {state:'close'}, null,null,null);
 		ESmartMeter.userfunc = null;
 	}
+
+	ESmartMeter.stopObservation();
+
+	if( ESmartMeter.port != null ) {
+		ESmartMeter.port.close();
+		ESmartMeter.port = null;
+	}
+
 	ESmartMeter.state = 'disconnected';
 };
 
