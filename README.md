@@ -53,7 +53,13 @@ Your ID and password for B route service is required.
 
 ```JavaScript:Demo
 //////////////////////////////////////////////////////////////////////
+//	Copyright (C) Hiroshi SUGIMURA 2021.09.13 - above.
+//////////////////////////////////////////////////////////////////////
+'use strict'
+
+//////////////////////////////////////////////////////////////////////
 let eSM = require('e-smartmeter-echonet-lite');
+const cron = require('node-cron');
 
 
 ////////////////////////////////////////////////////////////////////////////
@@ -62,47 +68,64 @@ let config = {
   dongleType: 'ROHM',  // 'ROHM' or 'TESSERA', default:TESSERA
   id:'01234567890QWERTYUIOPASDFGHJKLZX',   // Bルート認証ID設定, Your B route ID.
   password:'123456789ABC',   // Bルート認証パスワード設定, Your B route password.
-  observationEPCs: ['80','81','82','88','8A','8D','97','98','9D','9E','9F',
-                    'D3','D7','E0','E1','E2','E3','E4','E5','E7','E8','EA','EB','EC','ED']
+  EPANDESC : {},
+  debug: true,
 }
 
-// 初回起動のみ実施するためのフラグ, flag for first connection
+
+// 接続管理フラグ
 let connected = false;
 
 
-// 初期化, initializing
-eSM.initialize( config, ( sm, rinfo, els, err) => {
-	console.log( '## user function', (new Date()).toLocaleString(), '##' );
-	if( err ) {
-		console.log( 'eSM Error' );
-		console.dir( err );
-		return;
-	}
-	console.log( JSON.stringify(sm) );
-	rinfo ? console.dir( rinfo ):0;
-	els ? console.dir( els ):0;
+cron.schedule('*/30 * * * * *', () => {
+	// 既に接続していたら機器情報の変化をみる。接続していなかったら接続する
+	// 30秒に1回、ポートの状況を監視して、ついでに定期的にメーターからgetする
+	if( connected ) {
+		eSM.getMeasuredValues();		// 機器情報の変化の監視
+		console.log( '## == facilities', (new Date()).toLocaleString(), '== ##' );
+		console.dir( eSM.facilities );
 
-	try{
-		// 初回接続時, first connection
-		if( !connected && sm.state == 'available' ) {
-			connected = true;
+	}else{
+		// 初期化
+		eSM.initialize( config, ( sm, rinfo, els, err) => {
+			console.log( '## user function', (new Date()).toLocaleString(), '##' );
 
-			// config.observationEPCsのEPCを定期的にGetする
-			eSM.startObservation( 60 * 1000 );
-		}
-	}catch(e){
-		console.error(e);
+			if( err ) {
+				console.error( err );
+				return;
+			}
+
+			console.log( 'eSM:', sm);
+
+			// 切断された
+			if( sm.state == 'close' ) {
+				connected = false;
+				return;
+			}
+
+			// console.log( JSON.stringify(sm) );
+			// rinfo ? console.dir( rinfo ):0;
+			els ? console.dir( els ):0;
+
+			try{
+				// 初回接続時
+				if( !connected && sm.state == 'available' ) {
+					connected = true;
+					console.log('## start observation.');
+					eSM.getStatic();
+				}
+			}catch(e){
+				console.error(e);
+			}
+		});
 	}
-	console.log( '## ============= ##' );
 
 });
 
-
-// 機器情報の変化の監視, observation for changing facilities
-eSM.setObserveFacilities( 10 * 1000, () => {
-	console.log( '## == onChanged', (new Date()).toLocaleString(), '== ##' );
-	console.dir( eSM.facilities );
-	console.log( '## ============= ##' );
+process.on('SIGINT', () => {
+	console.log('Ctrl + cのときは明示的にreleaseしないと、Windows/Node.jsがserialportを握ることがある');
+	eSM.release();
+	process.exit(0);
 });
 ```
 
@@ -461,35 +484,11 @@ ESmartMeter.sendOPC1 = function (ipv6, seoj, deoj, esv, epc, edt)
 
 ![](img/observe.png)
 
-### EPCの監視開始
 
-まずobservationEPCsに監視対象のEPCを文字列表現の16進数で列挙します．
+### 監視
 
-first, set observed EPCs into config.observationEPCs;
+node-cronを使います。
 
-```JavaScript
-config.observationEPCs = ['E1','E2']; // e.g.
-```
-
-startObservationをインターバル指定して実行します．
-
-call the startObservation with an argument as interval time.
-
-```JavaScript
-ESmartMeter.startObservation( 60 * 1000 );  // interval, millisecond
-```
-
-### EPCの監視終了
-
-```JavaScript
-ESmartMeter.stopObservation = function()
-```
-
-### 通信データの更新の監視
-
-最新データを監視し，更新されていた場合にonChangeとして登録したコールバック関数を呼び出します．
-
-observe the properties of facilities, if properties are updated, call your function as onChanged.
 
 ```JavaScript
 ESmartMeter.setObserveFacilities = function ( interval, onChanged ) // interval, millisecond
@@ -520,34 +519,37 @@ npm i echonet-lite-conv
 使い方は下記の様にすれば良いです．
 この例はデモスクリプトの拡張なので，比較してみてください．
 
-```JavaScript:Demo extended echonet-lite-conf
+```JavaScript:Demo
 //////////////////////////////////////////////////////////////////////
-const cron = require('node-cron');
-let eSM = require('e-smartmeter-echonet-lite');
-let ELconv = require('echonet-lite-conv');
-let util = require('util');
+//	Copyright (C) Hiroshi SUGIMURA 2021.09.13 - above.
+//////////////////////////////////////////////////////////////////////
+'use strict'
 
-ELconv.initialize();  // コンバータを初期化しておく（JSON形式の定義データを読む）
+//////////////////////////////////////////////////////////////////////
+let eSM = require('e-smartmeter-echonet-lite');
+const cron = require('node-cron');
+
 
 ////////////////////////////////////////////////////////////////////////////
 // config
 let config = {
+  dongleType: 'ROHM',  // 'ROHM' or 'TESSERA', default:TESSERA
   id:'01234567890QWERTYUIOPASDFGHJKLZX',   // Bルート認証ID設定, Your B route ID.
   password:'123456789ABC',   // Bルート認証パスワード設定, Your B route password.
-  observationEPCs: ['80','81','82','88','8A','8D','97','98','9D','9E','9F',
-                    'D3','D7','E0','E1','E2','E3','E4','E5','E7','E8','EA','EB','EC','ED']
+  EPANDESC : {},
+  debug: true,
 }
 
-// 初回起動のみ実施するためのフラグ, flag for first connection
+
+// 接続管理フラグ
 let connected = false;
 
 
-// 初期化, initializing
-cron.schedule('*/5 * * * * *', () => {
+cron.schedule('*/30 * * * * *', () => {
 	// 既に接続していたら機器情報の変化をみる。接続していなかったら接続する
-	// 5秒に1回、ポートの状況を監視している
+	// 30秒に1回、ポートの状況を監視して、ついでに定期的にメーターからgetする
 	if( connected ) {
-		// 機器情報の変化の監視
+		eSM.getMeasuredValues();		// 機器情報の変化の監視
 		console.log( '## == facilities', (new Date()).toLocaleString(), '== ##' );
 		console.dir( eSM.facilities );
 
@@ -557,11 +559,11 @@ cron.schedule('*/5 * * * * *', () => {
 			console.log( '## user function', (new Date()).toLocaleString(), '##' );
 
 			if( err ) {
-				console.log( 'eSM Error:', err );
+				console.error( err );
 				return;
 			}
 
-			console.dir( 'eSM:', sm);
+			console.log( 'eSM:', sm);
 
 			// 切断された
 			if( sm.state == 'close' ) {
@@ -577,20 +579,21 @@ cron.schedule('*/5 * * * * *', () => {
 				// 初回接続時
 				if( !connected && sm.state == 'available' ) {
 					connected = true;
-
-					// config.observationEPCsのEPCを定期的にGetする
 					console.log('## start observation.');
-					eSM.startObservation( 30 * 1000 );
-
 					eSM.getStatic();
 				}
 			}catch(e){
 				console.error(e);
 			}
-			console.log( '## ============= ##' );
 		});
 	}
 
+});
+
+process.on('SIGINT', () => {
+	console.log('Ctrl + cのときは明示的にreleaseしないと、Windows/Node.jsがserialportを握ることがある');
+	eSM.release();
+	process.exit(0);
 });
 ```
 
