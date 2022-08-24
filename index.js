@@ -300,11 +300,6 @@ ESmartMeter.onOpen = function () {
 ESmartMeter.onClose = function () {
 	ESmartMeter.debug ? console.log('-- SM:close') : 0;
 
-	ESmartMeter.port.resume(function(e){
-      // reconnectDevice(); // Serial Port Initialization Function. It's your method to declare serial port.
-      console.log("Error on resuming port:", e);
-    });
-
 	ESmartMeter.port = null;
 	ESmartMeter.release();
 };
@@ -384,11 +379,16 @@ ESmartMeter.initialize = async function( config, callback ) {
 
 ESmartMeter.release = function() {
 	ESmartMeter.state = 'close';
-	if( ESmartMeter.userfunc ) {
-		ESmartMeter.userfunc( {state:'close'}, null,null,null);
-		ESmartMeter.userfunc = null;
-	}
 
+	if( ESmartMeter.port != null ) {
+		if( ESmartMeter.port.isOpen ) {
+			console.error('port isOpen now. port close.');
+			ESmartMeter.port.close( (error) => {
+				console.error('-- SM:release() port.close error:', error);
+			});
+		}
+		ESmartMeter.port = null;
+	}
 	ESmartMeter.stopObservation();
 
 	if( ESmartMeter.port != null ) {
@@ -977,12 +977,13 @@ ESmartMeter.getStaticProfObj = function() {
 		0x05, 0xFF, 0x01,
 		0x0E, 0xF0, 0x01,
 		0x62,
-		0x05,
-		0x80, 0x00,
-		0x82, 0x00,
-		0xD3, 0x00,
-		0xD4, 0x00,
-		0xD6, 0x00
+		0x06,
+		0x80, 0x00,  // 動作状態
+		0x82, 0x00,  // Version情報
+		0x8A, 0x00,  // メーカコード
+		0xD3, 0x00,  // 自ノードインスタンス数
+		0xD4, 0x00,  // 自ノードクラス数
+		0xD6, 0x00   // 自ノードインスタンスリストS
 		]);
 
 	// データができたので送信する
@@ -1022,18 +1023,13 @@ ESmartMeter.getStaticMeterObj = function() {
 		0x05, 0xFF, 0x01,
 		0x02, 0x88, 0x01,
 		0x62,
-		0x0b,
-		0x81, 0x00,
-		0x82, 0x00,
-		0x8A, 0x00,
-		0x8D, 0x00,
-		0x9D, 0x00,
-		0x9E, 0x00,
-		0xD3, 0x00,
-		0xD7, 0x00,
-		0xE1, 0x00,
-		0xEA, 0x00,
-		0xEB, 0x00
+		0x06,
+		0x81, 0x00,  // 設置場所
+		0x82, 0x00,  // 規格Version情報
+		0x8A, 0x00,  // メーカコード
+		0xD3, 0x00,  // 係数
+		0xD7, 0x00,  // 積算電力量有効桁数
+		0xE1, 0x00,  // 積算電力量単位
 		]);
 
 	// データができたので送信する
@@ -1075,14 +1071,13 @@ ESmartMeter.getMeasuredValues = function() {
 		0x05, 0xFF, 0x01,
 		0x02, 0x88, 0x01,
 		0x62,
-		0x07,
-		0xD3, 0x00,
-		0xD7, 0x00,
-		0xE0, 0x00,
-		0xE1, 0x00,
-		0xE3, 0x00,
-		0xE7, 0x00,
-		0xE8, 0x00
+		0x06,
+		0xD3, 0x00,  // 係数
+		0xD7, 0x00,  // 積算電力量有効桁数
+		0xE0, 0x00,  // 積算電力量計測値（正方向）
+		0xE3, 0x00,  // 積算電力量計測値（逆方向）
+		0xE7, 0x00,  // 瞬時電力計測値
+		0xE8, 0x00   // 瞬時電流計測値
 		]);
 
 	// データができたので送信する
