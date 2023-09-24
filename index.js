@@ -4,6 +4,7 @@
 'use strict';
 
 const { SerialPort } = require('serialport');
+const { ReadlineParser } = require('@serialport/parser-readline');
 
 
 //////////////////////////////////////////////////////////////////////
@@ -290,7 +291,14 @@ ESmartMeter.onReceive = async function (data) {
 };
 
 // ポートオープンしたら
-ESmartMeter.onOpen = function () {
+ESmartMeter.onOpen = function ( err ) {
+	if (err) {
+		ESmartMeter.debug ? console.log('-- SM:portOpen port is error. err:', err ):0;
+		return;
+	}
+
+	ESmartMeter.debug ? console.log('-- SM:portOpen port is ok.', ESmartMeter.portConfig.path ):0;
+
 	// ここからスマメ接続シーケンス，ポート雄分をトリガーにして，受信ベースで状態遷移していく
 	ESmartMeter.state = 'setSFE';
 	ESmartMeter.debug ? console.log('-- SM:setSFE, set echoback is disabled') : 0;
@@ -299,8 +307,6 @@ ESmartMeter.onOpen = function () {
 
 ESmartMeter.onClose = function () {
 	ESmartMeter.debug ? console.log('-- SM:close') : 0;
-
-	ESmartMeter.port = null;
 	ESmartMeter.release();
 };
 
@@ -310,8 +316,17 @@ ESmartMeter.onClose = function () {
 // password = Bルート認証パスワード設定
 ESmartMeter.initialize = async function( config, callback ) {
 	ESmartMeter.debug = config.debug ? config.debug : false;
+	ESmartMeter.debug ? console.log( '-- SM:ESmartMeter.initialize.' ):0;
+
+	if( ESmartMeter.port && ESmartMeter.state == 'available' ) {  // すでに通信している
+		ESmartMeter.debug ? console.error( `-- SM:initialize: port is used already. state: ${ESmartMeter.state}` ):0;
+		ESmartMeter.debug ?ESmartMeter.userfunc( ESmartMeter, null, null, 'Error: ESM is available already.' ):0;
+		return;
+	}
+
 	if( ESmartMeter.port ) {  // すでに通信している
-		ESmartMeter.debug ?ESmartMeter.userfunc( {state:'portOpen'}, null, null, 'Error: port is used already.' ):0;
+		ESmartMeter.debug ? console.error( `-- SM:initialize: port is used already. state: ${ESmartMeter.state}` ):0;
+		ESmartMeter.userfunc( ESmartMeter, null, null, `Error: port is used already. state: ${ESmartMeter.state}` );
 		return;
 	}
 
@@ -362,18 +377,11 @@ ESmartMeter.initialize = async function( config, callback ) {
 	ESmartMeter.state = 'portOpen';
 	ESmartMeter.debug ? console.log('-- SM:portOpen try', ESmartMeter.portConfig.path ):0;
 
-
-	// 接続
-	ESmartMeter.port = await new SerialPort( ESmartMeter.portConfig, function (err) {
-		if (!err) {
-			ESmartMeter.debug ? console.log('-- SM:portOpen port is ok.', ESmartMeter.portConfig.path ):0;
-			// ESmartMeter.port.on('open', ESmartMeter.onOpen ); 	// シリアルポートが準備できたらやる関数登録
-			ESmartMeter.port.on('data', ESmartMeter.onReceive ); 	// 受信関数登録
-			ESmartMeter.port.on('close', ESmartMeter.onClose );	// close確認
-			ESmartMeter.onOpen();  // openしたのでシーケンス開始
-			return;
-		}
-	});
+	ESmartMeter.port = new SerialPort( ESmartMeter.portConfig );	// 接続
+	ESmartMeter.port.pipe( new ReadlineParser({ delimiter: '\r\n' }) );	// データを行にする
+	ESmartMeter.port.on('open',  ESmartMeter.onOpen ); 	// シリアルポートが準備できたらやる関数登録
+	ESmartMeter.port.on('data',  ESmartMeter.onReceive ); 	// 受信関数登録
+	ESmartMeter.port.on('close', ESmartMeter.onClose );	// close確認
 };
 
 
@@ -382,19 +390,16 @@ ESmartMeter.release = function() {
 
 	if( ESmartMeter.port != null ) {
 		if( ESmartMeter.port.isOpen ) {
-			console.error('port isOpen now. port close.');
+			ESmartMeter.debug ? console.log('-- SM:port isOpen now. port close' ):0;
 			ESmartMeter.port.close( (error) => {
-				console.error('-- SM:release() port.close error:', error);
+				if( error ) {
+					console.error('-- SM:release() port.close error:', error);
+				}
 			});
 		}
 		ESmartMeter.port = null;
 	}
 	ESmartMeter.stopObservation();
-
-	if( ESmartMeter.port != null ) {
-		ESmartMeter.port.close();
-		ESmartMeter.port = null;
-	}
 
 	ESmartMeter.state = 'disconnected';
 };
@@ -524,8 +529,10 @@ ESmartMeter.parseBytes = function (bytes) {
 ESmartMeter.parseString = function (str) {
 	let eldata = {};
 
-	if( str.length < 28 ) { // 28文字以上（14Bytes）ないとELとして成立しない
-		// console.error(str.length);
+	// 28文字以上（14Bytes）ないとELとして成立しない
+	// 全体が偶数文字じゃないとおかしい
+	if( str.length < 28 || str.length % 2 ) {
+		console.error( 'Error: ESmartMeter.parseString() str.length:', str.length, ', str:', str );
 		return null;
 	}
 
@@ -978,11 +985,11 @@ ESmartMeter.getStaticProfObj = function() {
 		0x0E, 0xF0, 0x01,
 		0x62,
 		0x06,
-		0x80, 0x00,  // 動作状態
 		0x82, 0x00,  // Version情報
 		0x8A, 0x00,  // メーカコード
 		0xD3, 0x00,  // 自ノードインスタンス数
 		0xD4, 0x00,  // 自ノードクラス数
+		0xD5, 0x00,  // インスタンスリスト通知
 		0xD6, 0x00   // 自ノードインスタンスリストS
 		]);
 
@@ -1029,7 +1036,7 @@ ESmartMeter.getStaticMeterObj = function() {
 		0x8A, 0x00,  // メーカコード
 		0xD3, 0x00,  // 係数
 		0xD7, 0x00,  // 積算電力量有効桁数
-		0xE1, 0x00,  // 積算電力量単位
+		0xE1, 0x00   // 積算電力量単位
 		]);
 
 	// データができたので送信する
@@ -1072,12 +1079,12 @@ ESmartMeter.getMeasuredValues = function() {
 		0x02, 0x88, 0x01,
 		0x62,
 		0x06,
-		0xD3, 0x00,  // 係数
-		0xD7, 0x00,  // 積算電力量有効桁数
 		0xE0, 0x00,  // 積算電力量計測値（正方向）
 		0xE3, 0x00,  // 積算電力量計測値（逆方向）
 		0xE7, 0x00,  // 瞬時電力計測値
-		0xE8, 0x00   // 瞬時電流計測値
+		0xE8, 0x00,  // 瞬時電流計測値
+		0xEA, 0x00,  // 定時積算電力量計測値（正方向）
+		0xEB, 0x00   // 定時積算電力量計測値（逆方向）
 		]);
 
 	// データができたので送信する

@@ -1,10 +1,11 @@
 {
   "name": "e-smartmeter-echonet-lite",
-  "version": "2.7.4",
+  "version": "2.8.0",
   "description": "This module provides electric smart meter for ECHONET Lite protocol API.",
   "main": "index.js",
   "dependencies": {
-    "serialport": "^10.4.0"
+    "serialport": "^12.0.0",
+    "@serialport/parser-readline": "^12.0.0"
   },
   "scripts": {
     "test": "cd ..&& cd .. && npm test"

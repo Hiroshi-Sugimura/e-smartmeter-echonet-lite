@@ -628,6 +628,7 @@ x Warranty
 
 ## Log
 
+- 2.8.0 安定性向上
 - 2.7.4 port resume やめ。isOpen対応、ECHONET Lite AIFだとOPC6までしか保障されないので、それに合わせた。
 - 2.7.3 port resume
 - 2.7.2 debugもうちょい対応a
